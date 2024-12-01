@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: on-failure
+    env_file:
+      - .env
+    volumes:
+      - auth_refer:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 5s
+      retries: 5
+      timeout: 5s
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    tty: true
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./static:/static/
+    command: sh -c "python manage.py migrate &&  python manage.py collectstatic --no-input && gunicorn -w $(( $(nproc)*2+1 )) -b 0.0.0.0:5000 config.wsgi"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  nginx:
+    tty: true
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    restart: on-failure
+    ports:
+      - 80:80
+    volumes:
+      - ./static:/static/
+    depends_on:
+      - app
+
+
+volumes:
+  auth_refer:
+    driver: local
